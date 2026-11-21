@@ -1,0 +1,38 @@
+# Byte-compiled / virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Raw & generated lakehouse data (stored in AWS S3 / Supabase)
+data-engineering/bronze/
+data-engineering/silver/
+data-engineering/gold/
+data-engineering/logs/
+*.csv
+*.parquet
+*.zip
+
+# IDE & OS clutter
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Power BI auto-recovery / lock files
+*.pbix.tmp
+~$*.pbix
