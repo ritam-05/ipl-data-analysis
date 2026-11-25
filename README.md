@@ -3,14 +3,14 @@
 <p align="center">
   <img src="docs/images/banner.png" alt="Know IPL Historical Analytics" width="100%" />
 </p>
-An end-to-end business intelligence solution for exploring historical Indian Premier League (IPL) performance. The project turns ball-by-ball match data into governed analytics tables, publishes them to an AWS S3 data lake and Supabase PostgreSQL, and presents the results in an interactive Power BI report.
+An end-to-end business intelligence solution for exploring historical Indian Premier League (IPL) performance. The project turns ball-by-ball match data into governed analytics tables, publishes them to an AWS S3 data lake and PostgreSQL, and presents the results in an interactive Power BI report.
 
 ## Highlights
 
 - **Medallion-style data pipeline** — raw CSV extracts progress through Bronze, Silver, and Gold layers.
 - **Analytics-ready model** — eight Gold dimension and fact tables support match, player, team, and venue analysis.
 - **Data-quality transformations** — standardises historical franchise and venue names, normalises season values, and applies cricket-aware metric logic.
-- **Cloud-ready delivery** — synchronises lake layers to Amazon S3 and loads curated tables into Supabase PostgreSQL.
+- **Cloud-ready delivery** — synchronises lake layers to Amazon S3 and loads curated tables into PostgreSQL.
 - **Interactive reporting** — a five-page Power BI report supports overview, player, team, venue, and season analysis.
 
 ## Architecture
@@ -32,8 +32,7 @@ Silver  ─── Cleaned, standardised delivery-level Parquet (partitioned by s
 Gold    ─── Curated dimensions and facts in Parquet
           ├──────────────────────────► Amazon S3 data lake
           │                              upload_to_s3.py
-          └──────────────────────────► Supabase PostgreSQL
-                                         load_to_supabase.py
+          └──────────────────────────► PostgreSQL
                                                     │
                                                     ▼
                                              Power BI dashboard
@@ -54,7 +53,6 @@ The S3 lake preserves the three data layers, with raw Bronze data stored as a co
 │   ├── etl_silver.py          # Cleans and standardises delivery-level data
 │   ├── etl_gold.py            # Builds curated analytical tables
 │   ├── upload_to_s3.py        # Publishes Bronze, Silver, and Gold layers to S3
-│   └── load_to_supabase.py    # Loads Gold tables into Supabase PostgreSQL
 ├── docs/images/               # Architecture and dashboard screenshots
 ├── powerbi/ipl-bi.pbix        # Power BI report
 ├── .env.example               # Required environment variables template
@@ -374,7 +372,7 @@ Git and GitHub version control
 - Python 3.10 or later
 - Java runtime compatible with PySpark
 - An AWS account and S3 bucket (for lake synchronisation)
-- A Supabase PostgreSQL project (for relational serving)
+- A PostgreSQL database (for relational serving)
 - Power BI Desktop (to open and refresh the report)
 
 ### 1. Set up the environment
@@ -386,7 +384,7 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Update `.env` with your Supabase connection string and AWS credentials. Never commit this file.
+Update `.env` with your PostgreSQL connection string and AWS credentials. Never commit this file.
 
 ### 2. Add source data
 
@@ -423,17 +421,11 @@ Bronze is uploaded as `bronze/cricsheet_raw.zip`; Silver and Gold prefixes are r
 python data-engineering/upload_to_s3.py --force-bronze
 ```
 
-Load the Gold tables into Supabase:
-
-```powershell
-python data-engineering/load_to_supabase.py
-```
-
-The target Supabase tables must already exist. The loader truncates and reloads the eight analytics tables in dependency order, so use a dedicated analytics schema/database connection.
+Load the Gold tables into PostgreSQL with your chosen loader. The target tables must already exist, and the loader should reload the eight analytics tables in dependency order using a dedicated analytics schema/database connection.
 
 ### 5. Explore the report
 
-Open [`powerbi/ipl-bi.pbix`](powerbi/ipl-bi.pbix) in Power BI Desktop. Configure or refresh its data source as appropriate for your Supabase deployment.
+Open [`powerbi/ipl-bi.pbix`](powerbi/ipl-bi.pbix) in Power BI Desktop. Configure or refresh its data source as appropriate for your PostgreSQL deployment.
 
 ## Configuration
 
@@ -441,8 +433,6 @@ Use [`.env.example`](.env.example) as the configuration template.
 
 | Variable | Description |
 | --- | --- |
-| `SUPABASE_DB_URL` | Supabase PostgreSQL Session Pooler connection URI. |
-| `SUPABASE_URL` | Supabase project URL. |
 | `AWS_ACCESS_KEY_ID` | IAM access key permitted to access the S3 bucket. |
 | `AWS_SECRET_ACCESS_KEY` | IAM secret access key. |
 | `AWS_REGION` | AWS region for the bucket; defaults to `ap-south-1`. |
@@ -452,7 +442,7 @@ Use [`.env.example`](.env.example) as the configuration template.
 
 - Each ETL and publishing script writes a run log to `data-engineering/logs/`.
 - Generated data, logs, archives, credentials, and local environments are excluded from version control.
-- The Supabase loader uses an idempotent truncate-and-reload pattern, preserving the existing table definitions and relationships.
+- The PostgreSQL loader uses an idempotent truncate-and-reload pattern, preserving the existing table definitions and relationships.
 
 ## Technology stack
 
