@@ -11,7 +11,7 @@ An end-to-end business intelligence solution for exploring historical Indian Pre
 - **Analytics-ready model** — eight Gold dimension and fact tables support match, player, team, and venue analysis.
 - **Data-quality transformations** — standardises historical franchise and venue names, normalises season values, and applies cricket-aware metric logic.
 - **Cloud-ready delivery** — synchronises lake layers to Amazon S3 and loads curated tables into PostgreSQL.
-- **Interactive reporting** — a five-page Power BI report supports overview, player, team, venue, and season analysis.
+- **Interactive reporting** — the documented report views cover overview, player, venue, and team head-to-head analysis.
 
 ## Architecture
 
@@ -307,17 +307,92 @@ DIVIDE([Venue Chase Wins], Decided, 0)
 
 </details>
 
+### Measure and table design
+
+Raw IPL fields are useful for individual match or player records, but the report needs reusable calculations that respond correctly to slicers. The `_Measures` table is therefore a dedicated home for DAX logic: it keeps calculations out of the fact tables, gives every visual one consistent definition, and avoids incorrect aggregation of rates such as strike rate, economy, and win percentage.
+
+#### Model tables
+
+| Table | Why it exists | Used for |
+| --- | --- | --- |
+| `dim_seasons` | Provides one canonical row per season. | Season slicers and year-by-year charts. |
+| `dim_teams` | Provides canonical franchise names, including historically standardised names. | Team and opponent filtering. |
+| `dim_venues` | Provides a controlled venue list. | Venue filtering and venue-level reporting. |
+| `dim_players` | Provides one row per player. | Player labels, ranking, and filtering. |
+| `fact_matches` | Stores one record per match, including innings totals, winner, venue, and win type. | Overview and venue KPIs, score trends, win-type analysis, and venue outcomes. |
+| `fact_player_batting_season` | Stores one player-season-team batting record. | Runs, balls faced, dismissals, boundaries, batting average, strike rate, and consistency calculations. |
+| `fact_player_bowling_season` | Stores one player-season-team bowling record. | Wickets, legal balls, conceded runs, economy, and bowling strike rate. |
+| `fact_venue_stats` | Stores venue-level scoring and outcome statistics. | A curated venue summary for validation or further venue analysis. The shown venue measures calculate from `fact_matches` so they follow the active filters. |
+| `h2h_match_perspective` | Expands each match into one row for each competing team, with the other team recorded as its opponent. | Lets one set of team measures work for a selected franchise and every opponent; otherwise teams stored in separate `team_1` and `team_2` columns would require separate logic. |
+| `_Measures` | Holds DAX measures rather than imported rows. | Centralised, reusable report calculations. |
+
+#### Why each measure exists
+
+| Measure group | Measures | Purpose |
+| --- | --- | --- |
+| Report scale and scoring | `Total Seasons`, `Total Matches`, `Total Players`, `Total Venues`, `Avg 1st Innings Score`, `Avg 2nd Innings Score`, `Highest Team Score` | Establish the size of the data and the baseline or maximum scoring environment. The average and maximum calculations must be evaluated in the current filter context. |
+| Match outcomes | `Chase Wins`, `Bat First Wins`, `Chase Win Rate` | Separates matches won while chasing from matches won by defending. `Chase Win Rate` divides only by decided matches, so ties and no-results do not distort the percentage. |
+| Era comparison | `Modern Era Shift Runs` | Calculates the difference between average first-innings score through 2017 and from 2018 onward. It provides a single number for an era-scoring comparison; it is defined in the model but is not displayed in the supplied screenshots. |
+| Batting totals and boundary split | `Total Runs`, `Total Balls Faced`, `Total Dismissals`, `Total Fours`, `Total Sixes`, `Boundary Runs`, `Running Runs` | Supplies batting volume and decomposes scoring into runs from fours, sixes, and all other running/non-boundary runs. `Boundary Runs` and `Running Runs` cannot be obtained by simply summing a pre-calculated ratio. |
+| Batting rates | `Career Batting Avg`, `Career Batting SR` | Calculates runs per dismissal and runs per 100 balls from filtered totals. Recalculating from totals prevents inaccurate averages when several seasons or players are selected. |
+| Bowling totals and rates | `Total Wickets`, `Total Legal Balls`, `Total Runs Conceded`, `Career Bowling Economy`, `Career Bowling SR` | Converts bowling events into cricket-standard rates: runs conceded per six legal balls and legal balls per wicket. Legal balls are used so wides and no-balls do not incorrectly inflate the denominator. |
+| Batting consistency and leaders | `Season Runs CV`, `Top Batter Runs`, `Top Batter Name`, `Top Bowler Wickets`, `Top Bowler Name` | `Season Runs CV` compares a player's season-to-season variation with their mean output and returns a result only after at least three seasons. The leader measures return the highest filtered batting or bowling total and the corresponding player name. These measures are defined for analysis but no consistency or leader card is visible in the supplied screenshots. |
+| Team head-to-head | `Team Matches`, `Team Wins`, `Team Losses`, `Team Win %`, `Team Highest Score`, `Team Lowest Score` | Uses `h2h_match_perspective` so a team can be evaluated uniformly against all opponents. Losses count only decided matches; win percentage is calculated from the filtered team-match count; score measures identify a team's extremes. |
+| Venue | `Active Venues`, `Venue Matches`, `Venue Avg 1st Innings`, `Venue Highest Score`, `Venue Lowest Score`, `Venue Bat First Wins`, `Venue Chase Wins`, `Venue Chase Win %` | Provides a filter-aware stadium profile. The chase rate uses decided venue matches only, while the other measures quantify venue sample size, scoring level/extremes, and defending-versus-chasing outcomes. |
+
+### Dashboard guide
+
+The screenshots document four dashboard views. Values in every visual are intended to change with the available slicers and cross-filtering.
+
+#### Overview
+
+| Element | Measures or fields | What it answers |
+| --- | --- | --- |
+| KPI strip | `Total Seasons`, `Total Matches`, `Total Players`, `Total Venues`, `Highest Team Score`, plus total fours and sixes | Gives a top-level view of the report’s time span, match/player/venue coverage, highest innings total, and aggregate boundary volume. |
+| **Avg 1st Innings Score VS Avg 2nd Innings Score** line chart | `Avg 1st Innings Score`, `Avg 2nd Innings Score`, season | Shows how scoring in each innings has changed by season. |
+| **Total Matches Won by Teams** bar chart | Match count, winner/team | Ranks franchises by number of wins. |
+| **Total Matches** pie chart | Match count by `win_type` | Shows the split of wicket wins, run wins, ties, and no-results. |
+| **Total Fours and Total Sixes** seasonal chart | Total fours, total sixes, season | Shows whether boundary volume has changed over the tournament’s history. |
+
+#### Player Analytics
+
+| Element | Measures | What it answers |
+| --- | --- | --- |
+| KPI strip | `Total Runs`, `Career Bowling Economy`, `Career Bowling SR`, `Career Batting Avg`, `Total Wickets` | Gives a compact view of batting output and bowling effectiveness in the current filter context. |
+| **Distribution of Runs for Top Run Scorers** stacked bars | `Running Runs`, six runs, fours runs | Breaks each leading batter’s runs into non-boundary runs, sixes, and fours, making scoring style comparable. |
+| **Total Wickets** bar chart | `Total Wickets` by player | Ranks wicket-taking volume. |
+| **Total Runs and Career Batting SR** combo chart | `Total Runs`, `Career Batting SR` by player | Pairs scoring volume with scoring speed so a high run total is not viewed without its strike rate. |
+
+#### Venue-wise Analytics
+
+| Element | Measures or fields | What it answers |
+| --- | --- | --- |
+| KPI strip | `Venue Matches`, `Active Venues`, `Venue Chase Win %`, `Venue Bat First Wins` | Summarises the active venue selection, its sample size, and broad chasing/defending outcomes. |
+| Venue and Season slicers | Venue and season | Let viewers focus every venue calculation on selected grounds and seasons. |
+| **Avg 1st Innings by Venues** bar chart | `Venue Avg 1st Innings` by venue | Ranks grounds by typical first-innings score. |
+| **Defending vs Chase wins** clustered bars | `Venue Bat First Wins`, `Venue Chase Wins` by venue | Compares whether teams have won more often while defending or chasing at each ground. |
+| Venue profile table | Venue, `Venue Matches`, `Venue Highest Score`, `Venue Avg 1st Innings`, `Venue Chase Wins`, `Venue Lowest Score`, `Venue Bat First Wins` | Gives a detailed, sortable venue comparison behind the charts. |
+| **Defend vs Chase Wins** donut | `Venue Bat First Wins`, `Venue Chase Wins` | Shows the overall defending-versus-chasing split for the active selection. |
+
+#### Team Head-to-Head Analytics
+
+| Element | Measures or fields | What it answers |
+| --- | --- | --- |
+| KPI strip | `Team Matches`, `Team Wins`, `Team Losses`, `Team Win %`, `Team Highest Score`, `Team Lowest Score` | Summarises the selected team’s record and scoring extremes. |
+| Team, Opponent, and Season slicers | Team, opponent, season | Define the franchise, rival, and time period used by all head-to-head measures. |
+| Opponent table | Opponent with all team head-to-head measures | Identifies opponents against whom the selected team has played most, won/lost most, or recorded score extremes. |
+| **Team Wins and Losses** stacked bars | `Team Wins`, `Team Losses` by opponent | Makes the head-to-head balance against every opponent visually comparable. |
+
 ## Dashboard
 
 The Power BI report is available at [`powerbi/ipl-bi.pbix`](powerbi/ipl-bi.pbix). Its broadcast-dark design uses a `#0B1120` canvas, `#111827` cards, `#1E293B` borders, amber highlights (`#F59E0B`), sky-blue accents (`#38BDF8`), and emerald success states (`#10B981`).
 
-| View | Purpose |
+| View | Screenshot-verified contents |
 | --- | --- |
-| Overview | Track IPL-wide KPIs, scoring trends, leading teams, and seasonal performance. |
-| Player Analytics | Compare batting and bowling contributions across seasons and teams. |
-| Teams Analytics | Analyse head-to-head records, score extremes, and match-by-match team outcomes. |
-| Venue-wise Analytics | Explore stadium scoring patterns, match volumes, and chasing outcomes. |
-| Season-wise Analytics | Examine year-over-year trends, champions, and the shift between IPL eras. |
+| Overview | KPI cards for total seasons, matches, players, venues, highest team score, sixes, and fours; seasonal first- versus second-innings scoring; matches won by team; win-type split; and fours/sixes by season. |
+| Player Analytics | KPI cards for total runs, bowling economy and strike rate, batting average, and wickets; run-composition bars for leading scorers; leading wicket-takers; and a total-runs versus batting-strike-rate combo chart. |
+| Venue-wise Analytics | Match, active-venue, chase-win-rate, and bat-first-win KPIs; venue and season slicers; first-innings scoring by venue; defend-versus-chase comparisons; a venue profile table; and a defend-versus-chase donut. |
+| Team Head-to-Head Analytics | Team, opponent, and season slicers; team record and score-extremes KPIs; an opponent-level head-to-head table; and team wins versus losses by opponent. |
 
 <p align="center">
   <img src="docs/images/overview-pg1.png" alt="IPL Historical Analytics Power BI overview dashboard" width="90%" />
@@ -350,7 +425,7 @@ Power BI Folder connector → eight imported tables
 Star schema + h2h_match_perspective + _Measures
                  │
                  ▼
-Five interactive dashboard pages
+Documented dashboard views
                  │
                  ▼
 Git and GitHub version control
@@ -362,7 +437,7 @@ Git and GitHub version control
 2. **Ingest with Power Query.** Create one Folder query per Gold folder; filter to `.parquet`, combine files, validate types, name the query after the Gold table, and select **Close & Apply**.
 3. **Model the data.** Confirm one-to-many dimension-to-fact relationships in Model view. Create `_Measures` and `h2h_match_perspective`, including its Season relationship.
 4. **Apply the report system.** Apply the Know IPL Broadcast Dark theme, synced Season slicers, bookmarks on Player Analytics, and intentional visual interactions.
-5. **Validate pages.** Check Overview, Player Analytics, Teams Analytics, Venue-wise Analytics, and Season-wise Analytics against the selected filters and measure definitions.
+5. **Validate pages.** Check the documented Overview, Player Analytics, Venue-wise Analytics, and Team Head-to-Head views against the selected filters and measure definitions.
 6. **Version the work.** Make focused Git commits after data-model, measure, and dashboard milestones; push validated increments to GitHub.
 
 ## Getting started
